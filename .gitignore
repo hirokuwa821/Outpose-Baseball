@@ -1,0 +1,81 @@
+# ========================================================
+# 1. Environment Variables & Secrets (公開NG: 認証・APIキー)
+# ========================================================
+.env
+.env.local
+.env.*.local
+*.env
+config.yaml
+
+# ========================================================
+# 2. Pitch Videos & Media Files (公開NG: 投球動画・動画全般)
+# ========================================================
+*.mp4
+*.mov
+*.avi
+*.webm
+videos/
+test_videos/
+temp_*.mp4
+
+# ========================================================
+# 3. Datasets & Large Data (公開NG: 大容量データセット)
+# ========================================================
+ball_dataset/
+data/
+dataset/
+datasets/
+mlb-yt-dataset/
+
+# ========================================================
+# 4. Internal Models & Training Scripts (公開NG: モデル重み・実験コード)
+# ========================================================
+models/
+*.pt
+yolo11n-pose.pt
+yolo11n.pt
+runs/
+output/
+hand_labels.csv
+train_result.txt
+analyze_pitch_error.py
+combine_ball_dataset.py
+download_next_pitches.py
+evaluate_model.py
+hand_diagnosis.py
+mlb_analyze.py
+select_next_pitches.py
+test_hand.py
+train.py
+
+# ========================================================
+# 5. Python Bytecode & Cache
+# ========================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# ========================================================
+# 6. Virtual Environments
+# ========================================================
+.venv/
+venv/
+ENV/
+env/
+
+# ========================================================
+# 7. Editor & OS Generated Files
+# ========================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
