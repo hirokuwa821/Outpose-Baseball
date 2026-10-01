@@ -9,6 +9,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import cv2
+import os
 import sys
 from pathlib import Path
 import datetime
@@ -35,109 +36,165 @@ if "lang" not in st.session_state:
     st.session_state["lang"] = "ja"
 lang = st.session_state["lang"]
 
-# --- RevenueCat SDK 初期化 (Purchases.configure / .env 経由) ---
-rc_purchases = rc.Purchases.configure()
+# --- App User ID の解決 & localStorage 永続化同期 ---
+url_uid = st.query_params.get("rc_uid")
+if url_uid and url_uid.startswith("rc_user_"):
+    app_user_id = url_uid
+    st.session_state["app_user_id"] = app_user_id
+elif "app_user_id" in st.session_state:
+    app_user_id = st.session_state["app_user_id"]
+else:
+    app_user_id = rc.generate_anonymous_app_user_id()
+    st.session_state["app_user_id"] = app_user_id
+
+# ブラウザの localStorage ("outpace_rc_uid") と Python を自動同期 (F5・再起動後も同じIDを復元)
+components.html(rc.generate_user_id_sync_script(app_user_id), height=0)
+
+# --- RevenueCat SDK 初期化 (Purchases.configure / 永続化 App User ID) ---
+rc_purchases = rc.Purchases.configure(app_user_id=app_user_id)
 
 # --- RevenueCat Web SDK からの購入完了トリガー検証 (URLパラメータ単体改ざん防止) ---
 if "rc_token" in st.query_params:
     expected_nonce = st.session_state.pop("rc_checkout_nonce", None)
-    if expected_nonce and rc_purchases.verify_purchase_trigger(st.query_params, expected_nonce=expected_nonce):
+    if expected_nonce and rc_purchases.verify_purchase_trigger(
+        st.query_params, expected_nonce=expected_nonce, expected_user_id=app_user_id
+    ):
         st.session_state["user_plan"] = "Pro"
         st.session_state["isSubscribed"] = True
         st.session_state["is_premium"] = True
         st.toast(i18n.t("paywall_purchase_success", lang, name="Pro"), icon="💎")
-    st.query_params.clear()
+    for param_key in ["rc_token", "rc_nonce", "rc_trigger", "rc_action"]:
+        st.query_params.pop(param_key, None)
 
-# --- ユーザー・サブスクリプション状態管理（Sandbox / Shipaton提出用） ---
+# --- ユーザー・サブスクリプション状態管理（F5・再起動時の自動復元） ---
 if "user_plan" not in st.session_state:
     st.session_state["user_plan"] = "Free"
 if "isSubscribed" not in st.session_state:
     st.session_state["isSubscribed"] = False
 if "is_premium" not in st.session_state:
     st.session_state["is_premium"] = False
-if "demo_user_id" not in st.session_state:
-    st.session_state["demo_user_id"] = rc_purchases.app_user_id
+if "show_paywall" not in st.session_state:
+    st.session_state["show_paywall"] = False
+
+# F5・再起動時: RevenueCat サーバー側 REST API で実購入状態を確認して自動復元
+if not st.session_state["isSubscribed"]:
+    srv_check = rc_purchases.check_server_entitlement(app_user_id)
+    if srv_check.get("is_active"):
+        st.session_state["user_plan"] = "Pro"
+        st.session_state["isSubscribed"] = True
+        st.session_state["is_premium"] = True
+
+st.session_state["demo_user_id"] = app_user_id
 
 
 # --- RevenueCat Paywall (公式 Web SDK @revenuecat/purchases-js 決済ダイアログ) ---
-def show_revenuecat_paywall():
-    dialog_title = i18n.t("paywall_dialog_title", lang)
+@st.dialog("Outpace Baseball - Pro Subscription", width="large")
+def _revenuecat_paywall_dialog(app_uid: str, current_lang: str):
+    header_title = i18n.t("paywall_header_title", current_lang)
+    header_subtitle = i18n.t("paywall_header_subtitle", current_lang)
 
-    @st.dialog(dialog_title, width="large")
-    def _inner_paywall():
-        header_title = i18n.t("paywall_header_title", lang)
-        header_subtitle = i18n.t("paywall_header_subtitle", lang)
+    # 暗号論的安全なワンタイム Nonce を発行してセッションに保持
+    checkout_nonce = secrets.token_urlsafe(16)
+    st.session_state["rc_checkout_nonce"] = checkout_nonce
 
-        # 暗号論的安全なワンタイム Nonce を発行してセッションに保持
-        checkout_nonce = secrets.token_urlsafe(16)
-        st.session_state["rc_checkout_nonce"] = checkout_nonce
+    # RevenueCat Billing 公式 Web SDK 決済コンポーネント (iframe)
+    components.html(rc_purchases.generate_web_billing_checkout_html(nonce=checkout_nonce, app_user_id=app_uid, lang=current_lang), height=240)
 
-        # RevenueCat Billing 公式 Web SDK 決済コンポーネント (iframe)
-        components.html(rc_purchases.generate_web_billing_checkout_html(nonce=checkout_nonce, lang=lang), height=210)
+    # RevenueCat Web Purchase Link (ホスト型決済ページへの直接遷移ボタン)
+    purchase_link_url = os.getenv("REVENUECAT_PURCHASE_LINK_URL", "https://app.revenuecat.com")
+    st.link_button(
+        "🌐 RevenueCat 公式決済ページを開く (Hosted Web Checkout)",
+        url=purchase_link_url,
+        type="secondary",
+        use_container_width=True,
+        help="RevenueCat がホストする公式 Web 決済ページを別タブで開きます。"
+    )
 
-        # Sandbox ステータスバッジ
-        st.markdown(
-            f"""<div style="background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 6px 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
-                <div style="font-size: 11px; color: #166534; font-weight: 700;">
-                    🧪 <b>RevenueCat Billing Sandbox</b> (Shipaton 2026 Demo)
-                </div>
-                <div style="font-size: 10.5px; color: #15803d; font-weight: 600;">
-                    Key: <code>{rc_purchases.get_masked_api_key()}</code> | Entitlement: <code>{rc_purchases.entitlement_id}</code> | isSubscribed: <b style="color: {'#16a34a' if st.session_state.get('isSubscribed') else '#dc2626'};">{st.session_state.get('isSubscribed', False)}</b>
-                </div>
-            </div>""",
-            unsafe_allow_html=True,
-        )
+    # Sandbox ステータスバッジ
+    st.markdown(
+        f"""<div style="background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 6px 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
+            <div style="font-size: 11px; color: #166534; font-weight: 700;">
+                🧪 <b>RevenueCat Billing Sandbox</b> (Shipaton 2026 Demo)
+            </div>
+            <div style="font-size: 10.5px; color: #15803d; font-weight: 600;">
+                Key: <code>{rc_purchases.get_masked_api_key()}</code> | Entitlement: <code>{rc_purchases.entitlement_id}</code> | isSubscribed: <b style="color: {'#16a34a' if st.session_state.get('isSubscribed') else '#dc2626'};">{st.session_state.get('isSubscribed', False)}</b>
+            </div>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
-        st.markdown(
-            f"""<div style="text-align: center; margin-bottom: 16px;">
-            <span style="background: linear-gradient(135deg, #0284c7, #0ea5e9); color: white; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold;">REVENUECAT IN-APP PURCHASE & SUBSCRIPTION</span>
-            <h3 style="margin-top: 8px; margin-bottom: 4px; color: #0f172a;">{header_title}</h3>
-            <p style="color: #64748b; font-size: 13px; margin: 0;">{header_subtitle}</p>
-            </div>""",
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        f"""<div style="text-align: center; margin-bottom: 16px;">
+        <span style="background: linear-gradient(135deg, #0284c7, #0ea5e9); color: white; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold;">REVENUECAT IN-APP PURCHASE & SUBSCRIPTION</span>
+        <h3 style="margin-top: 8px; margin-bottom: 4px; color: #0f172a;">{header_title}</h3>
+        <p style="color: #64748b; font-size: 13px; margin: 0;">{header_subtitle}</p>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
-        current_plan = st.session_state.get("user_plan", "Free")
-        plans = i18n.get_subscription_plans(lang=lang, current_plan=current_plan)
+    current_plan = st.session_state.get("user_plan", "Free")
+    plans = i18n.get_subscription_plans(lang=current_lang, current_plan=current_plan)
 
-        cols = st.columns(3)
-        for col, p in zip(cols, plans):
-            with col:
-                items_html = "".join([f"<li>{f}</li>" for f in p["features"]])
-                st.markdown(
-                    f"""<div style="border: 2px solid {p['border']}; border-radius: 12px; padding: 14px 12px; background: {p['bg']}; height: 320px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); margin-bottom: 10px;">
-                    <div style="font-size: 11px; font-weight: bold; color: #0284c7;">{p['badge']}</div>
-                    <h4 style="margin: 4px 0 0 0; color: #0f172a;">{p['name']}</h4>
-                    <div style="font-size: 22px; font-weight: 900; color: #0f172a; margin: 8px 0;">{p['price']} <span style="font-size: 11px; font-weight: normal; color: #64748b;">{p['period']}</span></div>
-                    <ul style="font-size: 11.5px; color: #334155; padding-left: 16px; line-height: 1.7; margin-bottom: 0;">{items_html}</ul>
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
-                if current_plan == p["id"]:
-                    btn_curr_lbl = i18n.t("paywall_current_plan", lang)
-                    st.button(btn_curr_lbl, key=f"pw_btn_{p['id']}", disabled=True, use_container_width=True)
+    cols = st.columns(3)
+    for col, p in zip(cols, plans):
+        with col:
+            items_html = "".join([f"<li>{f}</li>" for f in p["features"]])
+            st.markdown(
+                f"""<div style="border: 2px solid {p['border']}; border-radius: 12px; padding: 14px 12px; background: {p['bg']}; height: 320px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); margin-bottom: 10px;">
+                <div style="font-size: 11px; font-weight: bold; color: #0284c7;">{p['badge']}</div>
+                <h4 style="margin: 4px 0 0 0; color: #0f172a;">{p['name']}</h4>
+                <div style="font-size: 22px; font-weight: 900; color: #0f172a; margin: 8px 0;">{p['price']} <span style="font-size: 11px; font-weight: normal; color: #64748b;">{p['period']}</span></div>
+                <ul style="font-size: 11.5px; color: #334155; padding-left: 16px; line-height: 1.7; margin-bottom: 0;">{items_html}</ul>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+            if current_plan == p["id"]:
+                btn_curr_lbl = i18n.t("paywall_current_plan", current_lang)
+                st.button(btn_curr_lbl, key=f"pw_btn_{p['id']}", disabled=True, use_container_width=True)
+            else:
+                if p["id"] == "Free":
+                    btn_select_lbl = i18n.t("paywall_test_purchase", current_lang, name=p['name'])
+                    if st.button(btn_select_lbl, key=f"pw_btn_{p['id']}", type="secondary", use_container_width=True):
+                        st.session_state["user_plan"] = "Free"
+                        st.session_state["isSubscribed"] = False
+                        st.session_state["is_premium"] = False
+                        st.session_state["show_paywall"] = False
+                        st.toast(i18n.t("paywall_free_switched", current_lang), icon="🌱")
+                        st.rerun()
                 else:
-                    if p["id"] == "Free":
-                        btn_select_lbl = i18n.t("paywall_test_purchase", lang, name=p['name'])
-                        if st.button(btn_select_lbl, key=f"pw_btn_{p['id']}", type="secondary", use_container_width=True):
-                            st.session_state["user_plan"] = "Free"
-                            st.session_state["isSubscribed"] = False
-                            st.session_state["is_premium"] = False
-                            st.toast(i18n.t("paywall_free_switched", lang), icon="🌱")
-                            st.rerun()
-                    else:
-                        btn_select_lbl = f"💳 Web Billing ({p['name']})"
-                        st.button(btn_select_lbl, key=f"pw_btn_{p['id']}", type="primary", disabled=True, use_container_width=True, help="上のRevenueCat Billing決済コンポーネントから購入してください")
+                    btn_select_lbl = f"💳 {p['name']} を購入 (Sandbox)"
+                    if st.button(btn_select_lbl, key=f"pw_btn_{p['id']}", type="primary", use_container_width=True):
+                        st.session_state["user_plan"] = p["id"]
+                        st.session_state["isSubscribed"] = True
+                        st.session_state["is_premium"] = True
+                        st.session_state["show_paywall"] = False
+                        st.toast(i18n.t("paywall_purchase_success", current_lang, name=p['name']), icon="💎")
+                        st.rerun()
 
-        footer_note = i18n.t("paywall_footer_note", lang)
-        st.markdown(
-            f"""<div style="text-align: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b;">
-            {footer_note}
-            </div>""",
-            unsafe_allow_html=True,
-        )
+    footer_note = i18n.t("paywall_footer_note", current_lang)
+    st.markdown(
+        f"""<div style="text-align: center; margin-top: 14px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #64748b;">
+        {footer_note}
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
-    _inner_paywall()
+
+_dialog_opened_in_run = False
+
+def show_revenuecat_paywall():
+    global _dialog_opened_in_run
+    if _dialog_opened_in_run:
+        return
+    _dialog_opened_in_run = True
+    cur_lang = st.session_state.get("lang", "ja")
+    cur_uid = st.session_state.get("app_user_id", app_user_id)
+    _revenuecat_paywall_dialog(cur_uid, cur_lang)
+
+
+# セッションステートによる Paywall ダイアログ表示制御
+if st.session_state.get("show_paywall", False):
+    show_revenuecat_paywall()
 
 
 # カスタムCSS
@@ -239,7 +296,8 @@ with col_head_sub:
     st.write("")
     plan_btn_title = i18n.t("plan_badge_btn", lang, badge=p_badge)
     if st.button(plan_btn_title, key="head_paywall_btn", use_container_width=True):
-        show_revenuecat_paywall()
+        st.session_state["show_paywall"] = True
+        st.rerun()
 
 
 # --- 解析関数 ---
@@ -378,13 +436,17 @@ with st.sidebar:
 
     btn_paywall_lbl = i18n.t("sb_paywall_view_btn", lang)
     if st.button(btn_paywall_lbl, use_container_width=True, key="sb_paywall_btn"):
-        show_revenuecat_paywall()
+        st.session_state["show_paywall"] = True
+        st.rerun()
 
     # 価格表記の通貨切り替え (JPY: ¥ / Other: $)
     is_jpy = (lang == "ja")
     pro_opt_lbl = "Pro (¥1,980/月)" if is_jpy else "Pro ($14.99/mo)"
     elite_opt_lbl = "Elite (¥17,800/年)" if is_jpy else "Elite ($139.99/yr)"
     demo_plan_opts = ["Free", pro_opt_lbl, elite_opt_lbl]
+    if "prev_demo_plan" not in st.session_state:
+        st.session_state["prev_demo_plan"] = cur_p
+
     cur_idx = 0 if cur_p == "Free" else (1 if cur_p == "Pro" else 2)
     demo_select_lbl = i18n.t("demo_switch_plan_label", lang)
     new_demo_sel = st.selectbox(
@@ -395,12 +457,22 @@ with st.sidebar:
         key="sidebar_demo_plan_select",
     )
     new_plan_key = "Free" if "Free" in new_demo_sel else ("Pro" if "Pro" in new_demo_sel else "Elite")
-    if new_plan_key != cur_p:
-        purchase_res = rc_purchases.purchase_package(new_plan_key)
-        st.session_state["user_plan"] = new_plan_key
-        st.session_state["isSubscribed"] = purchase_res["isSubscribed"]
-        st.session_state["is_premium"] = purchase_res["is_subscribed"]
-        st.rerun()
+
+    # ユーザーがセレクトボックスを手動で変更した場合のみ切り替え処理を実行
+    if new_plan_key != st.session_state.get("prev_demo_plan"):
+        st.session_state["prev_demo_plan"] = new_plan_key
+        if new_plan_key == "Free":
+            st.session_state["user_plan"] = "Free"
+            st.session_state["isSubscribed"] = False
+            st.session_state["is_premium"] = False
+            st.session_state["show_paywall"] = False
+            st.toast(i18n.t("paywall_free_switched", lang), icon="🌱")
+            st.rerun()
+        else:
+            st.session_state["show_paywall"] = True
+            st.rerun()
+    else:
+        st.session_state["prev_demo_plan"] = cur_p
 
     st.markdown("---")
     st.subheader(i18n.t("lang_select", lang))
