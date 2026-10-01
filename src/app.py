@@ -406,9 +406,13 @@ def run_analysis(video, left_handed, release_frame=None, net_frame=None, pitcher
 
 
 # --- 動画リスト取得 ---
-available_videos = list(pitch_mod.BASE_FRAMES.keys())
+# 実在する mp4 ファイルのみをリストアップ (ローカルの既存動画はそのまま含まれる)
+available_videos = [
+    k for k in pitch_mod.BASE_FRAMES.keys()
+    if (VIDEOS_DIR / f"{k}.mp4").exists()
+]
 for p in VIDEOS_DIR.glob("*.mp4"):
-    if p.stem not in available_videos and not p.stem.startswith("temp_"):
+    if p.stem not in available_videos and not p.stem.startswith("temp_") and not p.stem.startswith("skeleton_"):
         available_videos.append(p.stem)
 
 # --- UI サイドバー ---
@@ -510,9 +514,12 @@ with st.sidebar:
 
     st.markdown("---")
     st.header(i18n.t("sidebar_settings", lang))
-    selected_video = st.selectbox(i18n.t("select_video", lang), available_videos)
+    if available_videos:
+        selected_video = st.selectbox(i18n.t("select_video", lang), available_videos)
+    else:
+        selected_video = None
 
-    is_left_default = pitch_mod.HANDEDNESS.get(selected_video, True)
+    is_left_default = pitch_mod.HANDEDNESS.get(selected_video, True) if selected_video else True
     handed_labels = [i18n.t("right_pitcher", lang), i18n.t("left_pitcher", lang)]
     left_handed = (
         st.radio(i18n.t("handedness", lang), handed_labels, index=1 if is_left_default else 0)
@@ -524,16 +531,16 @@ with st.sidebar:
     st.subheader(i18n.t("height_settings", lang))
 
     # 動画解像度を取得してAI推定身長を計算
-    v_path = VIDEOS_DIR / f"{selected_video}.mp4"
+    v_path = (VIDEOS_DIR / f"{selected_video}.mp4") if selected_video else None
     vw, vh = 720, 1280
-    if v_path.exists():
+    if v_path and v_path.exists():
         cap_chk = cv2.VideoCapture(str(v_path))
         vw = int(cap_chk.get(cv2.CAP_PROP_FRAME_WIDTH) or 720)
         vh = int(cap_chk.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1280)
         cap_chk.release()
 
-    ai_h = pitch_logic.estimate_pitcher_height(selected_video, video_w=vw, video_h=vh)
-    height_key = f"pitcher_height_{selected_video}"
+    ai_h = pitch_logic.estimate_pitcher_height(selected_video or "pitch", video_w=vw, video_h=vh)
+    height_key = f"pitcher_height_{selected_video or 'default'}"
     if height_key not in st.session_state:
         st.session_state[height_key] = int(ai_h)
 
@@ -604,10 +611,10 @@ with st.sidebar:
         key=f"pitch_type_select_{selected_video}",
     )
 
-    run_btn = st.button(i18n.t("run_analysis", lang), type="primary", width="stretch")
+    run_btn = st.button(i18n.t("run_analysis", lang), type="primary", width="stretch", disabled=(not selected_video))
 
     # AI自動弾道解析ボタン
-    auto_track_btn = st.button(i18n.t("auto_track_btn", lang), type="secondary", width="stretch", key=f"auto_btn_{selected_video}")
+    auto_track_btn = st.button(i18n.t("auto_track_btn", lang), type="secondary", width="stretch", key=f"auto_btn_{selected_video}", disabled=(not selected_video))
     if auto_track_btn:
         with st.spinner(i18n.t("analyzing_spinner", lang)):
             try:
@@ -631,15 +638,21 @@ with st.sidebar:
                     pitch_logic.auto_track_new_video(new_name, is_left_handed=left_handed)
                 except Exception:
                     pass
+                st.session_state.pop("analyzed_result", None)
                 st.rerun()
 
 # 初回またはボタン押下または動画切り替えで解析
+has_valid_video = bool(selected_video and (VIDEOS_DIR / f"{selected_video}.mp4").exists())
 should_run = (
-    run_btn
-    or "analyzed_result" not in st.session_state
-    or st.session_state["analyzed_result"].get("video") != selected_video
-    or st.session_state["analyzed_result"].get("left_handed") != left_handed
-    or st.session_state["analyzed_result"].get("pitch_type") != selected_pitch_type
+    has_valid_video
+    and (
+        run_btn
+        or "analyzed_result" not in st.session_state
+        or st.session_state.get("analyzed_result") is None
+        or st.session_state["analyzed_result"].get("video") != selected_video
+        or st.session_state["analyzed_result"].get("left_handed") != left_handed
+        or st.session_state["analyzed_result"].get("pitch_type") != selected_pitch_type
+    )
 )
 if should_run:
     with st.spinner(i18n.t("analyzing_spinner", lang)):
@@ -675,7 +688,7 @@ tab_main, tab_compare, tab_history = st.tabs([
 ])
 
 
-if "analyzed_result" in st.session_state:
+if "analyzed_result" in st.session_state and st.session_state["analyzed_result"]:
     res = st.session_state["analyzed_result"]
     video = res["video"]
     speed = res["speed_kmh"]
@@ -1893,5 +1906,14 @@ if "analyzed_result" in st.session_state:
                 st.info("No history records yet.")
         else:
             st.info("History file not found.")
+
+else:
+    with tab_main:
+        st.markdown('<div class="card" style="text-align: center; padding: 40px 20px;">', unsafe_allow_html=True)
+        st.markdown("### ⚾ Outpace Baseball")
+        st.info("👈 左側のサイドバーにある「動画アップロード」から投球動画（MP4/MOV）をアップロードして解析を開始してください。" if lang == "ja" else "👈 Please upload a pitch video (MP4/MOV) from the sidebar to begin analysis.")
+        st.markdown('</div>', unsafe_allow_html=True)
+    with tab_compare:
+        st.info("動画を解析すると、ここで2球のフォーム・軌道比較が行えます。" if lang == "ja" else "Analyze videos to compare 2 pitches here.")
 
 
