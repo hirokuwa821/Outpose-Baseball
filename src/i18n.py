@@ -1904,10 +1904,10 @@ def get_subscription_plans(lang: str = "ja", current_plan: str = "Pro") -> list:
         "Elite": {"ja": "/ 年 (¥1,483/月)", "en": "/ year ($11.66/mo)", "es": "/ año ($11.66/mes)", "ko": "/ 년 (월 $11.66)", "zh": "/ 年 (月約 $11.66)"},
     }
 
-    # 改定価格 (少し高め設定: JPY ¥1,980/月, ¥17,800/年 | USD $14.99/mo, $139.99/yr)
+    # 改定価格 (RevenueCat Billing設定準拠: JPY ¥1,980/月, ¥17,800/年 | USD $12.99/mo, $139.99/yr)
     prices = {
         "Free": "¥0" if is_jpy else "$0",
-        "Pro": "¥1,980" if is_jpy else "$14.99",
+        "Pro": "¥1,980" if is_jpy else "$12.99",
         "Elite": "¥17,800" if is_jpy else "$139.99",
     }
 

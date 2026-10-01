@@ -12,6 +12,7 @@ import cv2
 import sys
 from pathlib import Path
 import datetime
+import secrets
 
 # --- パス設定とインポート ---
 sys.path.append(str(Path(__file__).parent))
@@ -37,6 +38,16 @@ lang = st.session_state["lang"]
 # --- RevenueCat SDK 初期化 (Purchases.configure / .env 経由) ---
 rc_purchases = rc.Purchases.configure()
 
+# --- RevenueCat Web SDK からの購入完了トリガー検証 (URLパラメータ単体改ざん防止) ---
+if "rc_token" in st.query_params:
+    expected_nonce = st.session_state.pop("rc_checkout_nonce", None)
+    if expected_nonce and rc_purchases.verify_purchase_trigger(st.query_params, expected_nonce=expected_nonce):
+        st.session_state["user_plan"] = "Pro"
+        st.session_state["isSubscribed"] = True
+        st.session_state["is_premium"] = True
+        st.toast(i18n.t("paywall_purchase_success", lang, name="Pro"), icon="💎")
+    st.query_params.clear()
+
 # --- ユーザー・サブスクリプション状態管理（Sandbox / Shipaton提出用） ---
 if "user_plan" not in st.session_state:
     st.session_state["user_plan"] = "Free"
@@ -48,7 +59,7 @@ if "demo_user_id" not in st.session_state:
     st.session_state["demo_user_id"] = rc_purchases.app_user_id
 
 
-# --- RevenueCat Paywall (課金画面 ＆ Sandboxテスト購入・動的タイトル多言語対応) ---
+# --- RevenueCat Paywall (公式 Web SDK @revenuecat/purchases-js 決済ダイアログ) ---
 def show_revenuecat_paywall():
     dialog_title = i18n.t("paywall_dialog_title", lang)
 
@@ -57,17 +68,21 @@ def show_revenuecat_paywall():
         header_title = i18n.t("paywall_header_title", lang)
         header_subtitle = i18n.t("paywall_header_subtitle", lang)
 
-        # Web SDK スクリプト (@revenuecat/purchases-js) をブラウザ側に注入
-        components.html(rc_purchases.generate_web_sdk_html(), height=0)
+        # 暗号論的安全なワンタイム Nonce を発行してセッションに保持
+        checkout_nonce = secrets.token_urlsafe(16)
+        st.session_state["rc_checkout_nonce"] = checkout_nonce
+
+        # RevenueCat Billing 公式 Web SDK 決済コンポーネント (iframe)
+        components.html(rc_purchases.generate_web_billing_checkout_html(nonce=checkout_nonce, lang=lang), height=210)
 
         # Sandbox ステータスバッジ
         st.markdown(
             f"""<div style="background-color: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 6px 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 4px;">
                 <div style="font-size: 11px; color: #166534; font-weight: 700;">
-                    🧪 <b>RevenueCat Sandbox Test Mode</b> (Shipaton 2026 Demo)
+                    🧪 <b>RevenueCat Billing Sandbox</b> (Shipaton 2026 Demo)
                 </div>
                 <div style="font-size: 10.5px; color: #15803d; font-weight: 600;">
-                    API Key: <code>{rc_purchases.get_masked_api_key()}</code> | User: <code>{rc_purchases.app_user_id}</code> | isSubscribed: <b style="color: {'#16a34a' if st.session_state.get('isSubscribed') else '#dc2626'};">{st.session_state.get('isSubscribed', False)}</b>
+                    Key: <code>{rc_purchases.get_masked_api_key()}</code> | Entitlement: <code>{rc_purchases.entitlement_id}</code> | isSubscribed: <b style="color: {'#16a34a' if st.session_state.get('isSubscribed') else '#dc2626'};">{st.session_state.get('isSubscribed', False)}</b>
                 </div>
             </div>""",
             unsafe_allow_html=True,
@@ -102,22 +117,17 @@ def show_revenuecat_paywall():
                     btn_curr_lbl = i18n.t("paywall_current_plan", lang)
                     st.button(btn_curr_lbl, key=f"pw_btn_{p['id']}", disabled=True, use_container_width=True)
                 else:
-                    btn_type = "primary" if p["id"] == "Pro" else "secondary"
-                    btn_select_lbl = i18n.t("paywall_test_purchase", lang, name=p['name'])
-                    if st.button(btn_select_lbl, key=f"pw_btn_{p['id']}", type=btn_type, use_container_width=True):
-                        # Sandbox テスト購入ロジックを実行
-                        purchase_res = rc_purchases.purchase_package(p["id"])
-                        st.session_state["user_plan"] = p["id"]
-                        st.session_state["isSubscribed"] = purchase_res["isSubscribed"]
-                        st.session_state["is_premium"] = purchase_res["is_subscribed"]
-
-                        if purchase_res["isSubscribed"]:
-                            toast_msg = i18n.t("paywall_purchase_success", lang, name=p['name'])
-                            st.toast(toast_msg, icon="💎")
-                        else:
-                            toast_msg = i18n.t("paywall_free_switched", lang)
-                            st.toast(toast_msg, icon="🌱")
-                        st.rerun()
+                    if p["id"] == "Free":
+                        btn_select_lbl = i18n.t("paywall_test_purchase", lang, name=p['name'])
+                        if st.button(btn_select_lbl, key=f"pw_btn_{p['id']}", type="secondary", use_container_width=True):
+                            st.session_state["user_plan"] = "Free"
+                            st.session_state["isSubscribed"] = False
+                            st.session_state["is_premium"] = False
+                            st.toast(i18n.t("paywall_free_switched", lang), icon="🌱")
+                            st.rerun()
+                    else:
+                        btn_select_lbl = f"💳 Web Billing ({p['name']})"
+                        st.button(btn_select_lbl, key=f"pw_btn_{p['id']}", type="primary", disabled=True, use_container_width=True, help="上のRevenueCat Billing決済コンポーネントから購入してください")
 
         footer_note = i18n.t("paywall_footer_note", lang)
         st.markdown(
