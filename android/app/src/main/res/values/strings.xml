@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Baseball Velocity AI</string>
+    
+    <!-- 
+        StreamlitアプリのURL設定
+        接続先のURLを変更する場合は、以下の値を書き換えてください。
+        例: 
+        ローカルテスト (Android実機 / PC同一LAN): "http://192.168.11.8:8501"
+        ローカルテスト (Android Emulator): "http://10.0.2.2:8501"
+        本番 Streamlit Community Cloud: "https://your-app-name.streamlit.app"
+    -->
+    <string name="streamlit_url">https://outpose-baseball-tlrzmffwsdwb9lpjj8b5ti.streamlit.app/</string>
+</resources>
+
