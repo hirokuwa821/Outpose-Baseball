@@ -53,6 +53,24 @@ rc_purchases = rc.Purchases.configure()
 
 ---
 
+## 📥 Sample Pitch Videos (デモ・審査用サンプル動画)
+
+Streamlit Community Cloud 上で即座に投球解析や2球比較機能を試せるよう、事前検証済みのサンプル投球動画（開発者本人の実投球動画）を配布しています。
+
+- **[📦 GitHub Releases: sample-videos ページはこちら](https://github.com/hirokuwa821/Outpose-Baseball/releases/tag/sample-videos)**
+
+| サンプル動画 | 球速・特徴 | サイズ | ダウンロード |
+|---|---|---|---|
+| **Sample Pitch 1** (`pitch_102_1.mp4`) | 直球 102 km/h（高速解析・単球デモ推奨） | 1.2 MB | [📥 ダウンロード](https://github.com/hirokuwa821/Outpose-Baseball/releases/download/sample-videos/pitch_102_1.mp4) |
+| **Sample Pitch 2** (`pitch_98_1.mp4`) | 直球 98 km/h（2-Pitch Comparison 比較用） | 1.8 MB | [📥 ダウンロード](https://github.com/hirokuwa821/Outpose-Baseball/releases/download/sample-videos/pitch_98_1.mp4) |
+
+### 審査員向けクイックテスト手順:
+1. 上記リンク（または [Releases ページ](https://github.com/hirokuwa821/Outpose-Baseball/releases/tag/sample-videos)）からサンプル動画（MP4）をPCまたはスマホに保存。
+2. アプリのサイドバーにある「動画アップロード」からファイルを選択し、「アップロードして解析」を押下。
+3. 2本両方をアップロードすると、「2投球フォーム比較」タブで2球のリリース差・ピッチトンネル比較が可能になります。
+
+---
+
 ## 🛠️ クイックスタート
 
 ### 1. 環境構築

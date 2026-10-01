@@ -627,6 +627,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader(i18n.t("upload_header", lang))
+    st.caption("📥 **Sample Videos**: [Sample 1 (102km/h)](https://github.com/hirokuwa821/Outpose-Baseball/releases/download/sample-videos/pitch_102_1.mp4) | [Sample 2 (98km/h)](https://github.com/hirokuwa821/Outpose-Baseball/releases/download/sample-videos/pitch_98_1.mp4) | [📦 Release Page](https://github.com/hirokuwa821/Outpose-Baseball/releases/tag/sample-videos)")
     uploaded_file = st.file_uploader(i18n.t("upload_label", lang), type=["mp4", "mov"])
     if uploaded_file is not None:
         if st.button(i18n.t("upload_btn", lang), width="stretch"):
@@ -1909,9 +1910,20 @@ if "analyzed_result" in st.session_state and st.session_state["analyzed_result"]
 
 else:
     with tab_main:
-        st.markdown('<div class="card" style="text-align: center; padding: 40px 20px;">', unsafe_allow_html=True)
+        st.markdown('<div class="card" style="text-align: center; padding: 35px 20px;">', unsafe_allow_html=True)
         st.markdown("### ⚾ Outpace Baseball")
         st.info("👈 左側のサイドバーにある「動画アップロード」から投球動画（MP4/MOV）をアップロードして解析を開始してください。" if lang == "ja" else "👈 Please upload a pitch video (MP4/MOV) from the sidebar to begin analysis.")
+        
+        sample_title = "📥 審査・デモ用サンプル動画（クリックしてダウンロード）" if lang == "ja" else "📥 Demo Sample Videos (Click to download)"
+        st.markdown(f"<div style='margin-top: 18px; font-weight: bold; font-size: 14px;'>{sample_title}</div>", unsafe_allow_html=True)
+        st.markdown(
+            """<div style="display: flex; justify-content: center; gap: 12px; margin-top: 10px; flex-wrap: wrap;">
+                <a href="https://github.com/hirokuwa821/Outpose-Baseball/releases/download/sample-videos/pitch_102_1.mp4" target="_blank" style="text-decoration: none; background: #ff4b4b; color: white; padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 13px;">📥 Sample 1: 102 km/h (1.2MB)</a>
+                <a href="https://github.com/hirokuwa821/Outpose-Baseball/releases/download/sample-videos/pitch_98_1.mp4" target="_blank" style="text-decoration: none; background: #1e293b; border: 1px solid #475569; color: white; padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 13px;">📥 Sample 2: 98 km/h (1.8MB)</a>
+                <a href="https://github.com/hirokuwa821/Outpose-Baseball/releases/tag/sample-videos" target="_blank" style="text-decoration: none; background: #0284c7; color: white; padding: 8px 16px; border-radius: 6px; font-weight: bold; font-size: 13px;">📦 GitHub Release ページ</a>
+            </div>""",
+            unsafe_allow_html=True,
+        )
         st.markdown('</div>', unsafe_allow_html=True)
     with tab_compare:
         st.info("動画を解析すると、ここで2球のフォーム・軌道比較が行えます。" if lang == "ja" else "Analyze videos to compare 2 pitches here.")
