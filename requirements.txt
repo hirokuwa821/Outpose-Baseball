@@ -8,3 +8,5 @@ opencv-python-headless==5.0.0.93
 ultralytics==8.4.114
 Pillow==12.3.0
 python-dotenv==1.2.3
+openpyxl==3.1.5
+
